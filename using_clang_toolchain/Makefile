@@ -10,6 +10,7 @@
 # configure or cmake.
 # For linking vs. a binary build of LLVM, point to the main untarred directory.
 LLVM_BUILD_PATH = $$HOME/llvm/build/svn-make-debug
+#LLVM_BUILD_PATH := $$HOME/llvm/build/gh-ninja-debug
 #LLVM_BUILD_PATH := $$HOME/llvm/build/svn-ninja-release
 
 # LLVM_BIN_PATH is the directory where binaries are placed by the LLVM build
@@ -18,10 +19,14 @@ LLVM_BUILD_PATH = $$HOME/llvm/build/svn-make-debug
 LLVM_BIN_PATH = $(LLVM_BUILD_PATH)/Debug+Asserts/bin
 #LLVM_BIN_PATH := $(LLVM_BUILD_PATH)/bin
 
+CLANG    := $(LLVM_BIN_PATH)/clang
 CLANGXX  := $(LLVM_BIN_PATH)/clang++
+LLVMLINK := $(LLVM_BIN_PATH)/llvm-link
 LLC      := $(LLVM_BIN_PATH)/llc
+OPT 		 := $(LLVM_BIN_PATH)/opt
 LD       := $(LLVM_BIN_PATH)/clang++
 
+CFLAGS    := -std=c99 -Wall
 CXXFLAGS  := -Wall
 CXX11FLAG := -std=c++11
 
@@ -63,8 +68,28 @@ $(BUILDDIR)/simple-from-bitcode: $(BUILDDIR)/simple-from-bitcode.o
 	$(call colorecho,"Linking with" $(LD))
 	$(LD) $^ -o $@
 
+# The following rules compile a library "memcaller" to bitcode, as well as a
+# "main" object that invokes it. It then uses llvm-link to link the two bitcodes
+# into one and proceeds with llc to compile them to native code.
+$(BUILDDIR)/memmain.bc: memmain.c
+	$(CLANG) $(CFLAGS) $^ -o $@ -c -emit-llvm
+
+$(BUILDDIR)/memcaller.bc: memcaller.c
+	$(CLANG) $(CFLAGS) $^ -o $@ -c -emit-llvm
+
+$(BUILDDIR)/memmain_exe.bc: $(BUILDDIR)/memmain.bc $(BUILDDIR)/memcaller.bc
+	$(LLVMLINK) -o=$@ $^
+
+$(BUILDDIR)/memmain_exe: $(BUILDDIR)/memmain_exe.bc
+	$(LLC) $^ -o $(BUILDDIR)/memmain_exe.o -filetype=obj
+	$(LD) $(BUILDDIR)/memmain_exe.o -o $@
+
 $(BUILDDIR)/cxx11-range-sample: cxx11-range-sample.cpp
 	$(CLANGXX) $(CXXFLAGS) $(CXX11FLAG) $^ -o $@
+
+# Not adding this one to 'all' because it generates warnings
+$(BUILDDIR)/warn_in_macro: warn_in_macro.cpp
+	$(CLANGXX) $(CXXFLAGS) $^ -o $@
 
 clean:
 	rm -rf $(BUILDDIR)/* *.dot test/*.pyc test/__pycache__
